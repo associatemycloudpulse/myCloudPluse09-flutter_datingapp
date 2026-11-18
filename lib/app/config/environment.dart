@@ -41,7 +41,8 @@ enum DataFeature {
   swipes,
   matches,
   chat,
-  subscriptions;
+  subscriptions,
+  store;
 
   static DataFeature parse(String raw) {
     final name = raw.trim().toLowerCase();

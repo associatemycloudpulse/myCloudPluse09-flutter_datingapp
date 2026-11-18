@@ -25,6 +25,12 @@ class MockMatchRepository implements MatchRepository {
   });
 
   @override
+  Future<Match> getMatch(String matchId) => _backend.run('getMatch', () {
+    return _backend.matches[matchId] ??
+        (throw const Failure(ErrorCode.notFound));
+  });
+
+  @override
   Future<void> unmatch(String matchId) => _backend.run('unmatch', () {
     if (!_backend.matches.containsKey(matchId)) {
       throw const Failure(ErrorCode.notFound);

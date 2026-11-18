@@ -8,6 +8,7 @@ abstract final class ApiEndpoints {
   static const otpVerify = '/auth/otp/verify';
   static const tokenRefresh = '/auth/token/refresh';
   static const logout = '/auth/logout';
+  static const logoutAll = '/auth/logout-all';
   static const register = '/auth/register';
   static const login = '/auth/login';
   static String social(String provider) => '/auth/social/$provider';
@@ -21,6 +22,7 @@ abstract final class ApiEndpoints {
   static const profilePhotoOrder = '/profile/photos/order';
   static String profilePhoto(String photoId) => '/profile/photos/$photoId';
   static const profileVerification = '/profile/verification';
+  static const profileLoginActivity = '/profile/login-activity';
   static String profile(String userId) => '/profiles/$userId';
 
   static const mediaUpload = '/media/upload';
@@ -41,6 +43,8 @@ abstract final class ApiEndpoints {
       '/conversations/$conversationId';
   static String messages(String conversationId) =>
       '/conversations/$conversationId/messages';
+  static String conversationGifts(String conversationId) =>
+      '/conversations/$conversationId/gifts';
   static String message(String messageId) => '/messages/$messageId';
   static String messageRead(String messageId) => '/messages/$messageId/read';
   static String messageUnsend(String messageId) =>
@@ -55,6 +59,15 @@ abstract final class ApiEndpoints {
   static String callReject(String callId) => '/calls/$callId/reject';
   static String callCancel(String callId) => '/calls/$callId/cancel';
   static String callEnd(String callId) => '/calls/$callId/end';
+  static String callGifts(String callId) => '/calls/$callId/gifts';
+
+  static const storeCatalog = '/store/catalog';
+  static const storeWallet = '/store/wallet';
+  static const storeHistory = '/store/history';
+  static const storeCheckout = '/store/checkout';
+  static const storeVerify = '/store/verify';
+  static const storeBuyWithCoins = '/store/buy-with-coins';
+  static const storeSendGift = '/store/send-gift';
 
   static String blockUser(String userId) => '/users/$userId/block';
   static const blocks = '/blocks';
@@ -69,8 +82,11 @@ abstract final class ApiEndpoints {
 
   static const subscriptionProducts = '/subscriptions/products';
   static const subscriptionEntitlement = '/subscriptions/entitlement';
+  static const subscriptionHistory = '/subscriptions/history';
+  static const subscriptionCheckout = '/subscriptions/checkout';
   static const subscriptionVerify = '/subscriptions/verify';
   static const subscriptionRestore = '/subscriptions/restore';
+  static const subscriptionCancel = '/subscriptions/cancel';
 
   static const supportFaqs = '/support/faqs';
   static const supportTickets = '/support/tickets';

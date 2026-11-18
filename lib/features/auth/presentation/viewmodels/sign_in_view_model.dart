@@ -2,10 +2,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/di/repository_providers.dart';
 import '../../../../core/errors/failure.dart';
+import '../../domain/legal.dart';
 import '../../domain/phone_number.dart';
 import 'session_view_model.dart';
 
-enum SignInStep { phone, otp }
+enum SignInStep { phone, otp, email }
 
 class SignInState {
   const SignInState({
@@ -123,6 +124,64 @@ class SignInViewModel extends Notifier<SignInState> {
 
   void changePhoneNumber() =>
       state = SignInState(phoneNumber: state.phoneNumber);
+
+  void useEmail() => state = const SignInState(step: SignInStep.email);
+
+  void usePhone() => state = const SignInState();
+
+  Future<void> loginWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    state = state.copyWith(isSubmitting: true, failure: null);
+    try {
+      final session = await ref
+          .read(authRepositoryProvider)
+          .login(email: email, password: password);
+      if (!ref.mounted) return;
+      ref.read(sessionViewModelProvider.notifier).signedIn(session);
+    } on Failure catch (failure) {
+      if (!ref.mounted) return;
+      state = state.copyWith(isSubmitting: false, failure: failure);
+    }
+  }
+
+  Future<void> registerWithEmail({
+    required String email,
+    required String password,
+    required String displayName,
+    required DateTime dateOfBirth,
+  }) async {
+    state = state.copyWith(isSubmitting: true, failure: null);
+    try {
+      final session = await ref.read(authRepositoryProvider).register(
+        email: email,
+        password: password,
+        displayName: displayName,
+        dateOfBirth: dateOfBirth,
+        acceptedTermsVersion: LegalDocuments.currentTermsVersion,
+      );
+      if (!ref.mounted) return;
+      ref.read(sessionViewModelProvider.notifier).signedIn(session);
+    } on Failure catch (failure) {
+      if (!ref.mounted) return;
+      state = state.copyWith(isSubmitting: false, failure: failure);
+    }
+  }
+
+  Future<void> socialSignIn(String provider) async {
+    state = state.copyWith(isSubmitting: true, failure: null);
+    try {
+      final session = await ref
+          .read(authRepositoryProvider)
+          .socialSignIn(provider: provider, idToken: 'pending-sdk-token');
+      if (!ref.mounted) return;
+      ref.read(sessionViewModelProvider.notifier).signedIn(session);
+    } on Failure catch (failure) {
+      if (!ref.mounted) return;
+      state = state.copyWith(isSubmitting: false, failure: failure);
+    }
+  }
 }
 
 final signInViewModelProvider =

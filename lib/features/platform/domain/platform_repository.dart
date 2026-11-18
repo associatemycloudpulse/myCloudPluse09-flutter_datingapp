@@ -34,7 +34,11 @@ abstract interface class PlatformRepository {
     NotificationPreferences preferences,
   );
 
-  Future<void> registerDevice();
+  /// Registers the device and returns the server `deviceId` when provided.
+  Future<String?> registerDevice();
+
+  /// Best-effort revoke of the last registered device (logout).
+  Future<void> unregisterDevice();
 
   Future<List<FaqItem>> faqs();
 

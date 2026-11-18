@@ -63,4 +63,15 @@ class ApiCallRepository implements CallRepository {
         CallDto.fromJson(item),
     ];
   }
+
+  @override
+  Future<void> sendGift({
+    required String callId,
+    required String giftItemId,
+  }) async {
+    await _client.post(
+      ApiEndpoints.callGifts(callId),
+      body: {'giftItemId': giftItemId},
+    );
+  }
 }

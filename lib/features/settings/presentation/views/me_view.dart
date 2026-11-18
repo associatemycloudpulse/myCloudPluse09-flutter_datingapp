@@ -14,6 +14,7 @@ import '../../../discovery/presentation/widgets/profile_card.dart';
 import '../../../profile/domain/entities/user_profile.dart';
 import '../../../profile/presentation/viewmodels/my_profile_view_model.dart';
 import '../../../profile/presentation/widgets/profile_basics.dart';
+import '../../../store/presentation/store_sheet.dart';
 import '../../../subscriptions/presentation/viewmodels/subscription_view_model.dart';
 import '../../../subscriptions/presentation/widgets/premium_section.dart';
 import '../account_sheets.dart';
@@ -597,6 +598,23 @@ class _SettingsSheet extends ConsumerWidget {
                       onTap: () => openAfterClose(
                         (host) => EditProfileSheet.show(host, me.profile),
                       ),
+                    ),
+                  ],
+                ),
+                GroupedSection(
+                  title: 'Activity',
+                  children: [
+                    row(
+                      'Likes',
+                      onTap: () => openAfterClose(LikesSheet.show),
+                    ),
+                    row(
+                      'Store',
+                      onTap: () => openAfterClose(StoreSheet.show),
+                    ),
+                    row(
+                      'Login activity',
+                      onTap: () => openAfterClose(LoginActivitySheet.show),
                     ),
                   ],
                 ),

@@ -41,3 +41,34 @@ class VerifyOtpResponseDto {
   AuthSession toEntity() =>
       AuthSession(userId: userId, needsOnboarding: needsOnboarding);
 }
+
+/// Shared auth success payload for OTP verify, register, login, and social.
+class AuthResultDto {
+  const AuthResultDto({
+    required this.userId,
+    required this.needsOnboarding,
+    required this.tokens,
+  });
+
+  factory AuthResultDto.fromJson(Json json) {
+    final tokens = asJson(json['tokens'], 'tokens');
+    final user = asJson(json['user'], 'user');
+    return AuthResultDto(
+      userId: user.req<String>('id'),
+      needsOnboarding:
+          (json.opt<bool>('isNewUser') ?? false) ||
+          user.opt<bool>('onboardingComplete') == false,
+      tokens: AuthTokens(
+        accessToken: tokens.req<String>('accessToken'),
+        refreshToken: tokens.req<String>('refreshToken'),
+      ),
+    );
+  }
+
+  final String userId;
+  final bool needsOnboarding;
+  final AuthTokens tokens;
+
+  AuthSession toEntity() =>
+      AuthSession(userId: userId, needsOnboarding: needsOnboarding);
+}

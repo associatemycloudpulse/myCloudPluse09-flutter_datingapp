@@ -15,6 +15,12 @@ class ApiAuthRepository implements AuthRepository {
   final ApiClient _client;
   final TokenStore _tokenStore;
 
+  Future<AuthSession> _persistAuth(Object? data) async {
+    final response = AuthResultDto.fromJson(asJson(data));
+    await _tokenStore.save(response.tokens);
+    return response.toEntity();
+  }
+
   @override
   Future<OtpChallenge> requestOtp(String phoneNumber) async =>
       OtpChallengeDto.fromJson(
@@ -31,19 +37,61 @@ class ApiAuthRepository implements AuthRepository {
   Future<AuthSession> verifyOtp({
     required String phoneNumber,
     required String code,
-  }) async {
-    final data = await _client.post(
+  }) async => _persistAuth(
+    await _client.post(
       ApiEndpoints.otpVerify,
       body: {
         'phoneNumber': PhoneNumberRules.normalize(phoneNumber),
         'code': code,
       },
       skipAuth: true,
-    );
-    final response = VerifyOtpResponseDto.fromJson(asJson(data));
-    await _tokenStore.save(response.tokens);
-    return response.toEntity();
-  }
+    ),
+  );
+
+  @override
+  Future<AuthSession> register({
+    required String email,
+    required String password,
+    required String displayName,
+    required DateTime dateOfBirth,
+    required String acceptedTermsVersion,
+  }) async => _persistAuth(
+    await _client.post(
+      ApiEndpoints.register,
+      body: {
+        'email': email.trim(),
+        'password': password,
+        'displayName': displayName.trim(),
+        'dateOfBirth': dateOfBirth.toUtc().toIso8601String().split('T').first,
+        'acceptedTermsVersion': acceptedTermsVersion,
+      },
+      skipAuth: true,
+    ),
+  );
+
+  @override
+  Future<AuthSession> login({
+    required String email,
+    required String password,
+  }) async => _persistAuth(
+    await _client.post(
+      ApiEndpoints.login,
+      body: {'email': email.trim(), 'password': password},
+      skipAuth: true,
+    ),
+  );
+
+  @override
+  Future<AuthSession> socialSignIn({
+    required String provider,
+    required String idToken,
+  }) async => _persistAuth(
+    await _client.post(
+      ApiEndpoints.social(provider),
+      body: {'idToken': idToken},
+      skipAuth: true,
+    ),
+  );
 
   @override
   Future<AuthSession?> currentSession() async {
@@ -62,18 +110,17 @@ class ApiAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<void> signOut() async {
+  Future<void> signOut({bool allDevices = false}) async {
     final tokens = await _tokenStore.read();
     try {
       if (tokens != null) {
         await _client.post(
-          ApiEndpoints.logout,
-          body: {'refreshToken': tokens.refreshToken},
+          allDevices ? ApiEndpoints.logoutAll : ApiEndpoints.logout,
+          body: allDevices ? null : {'refreshToken': tokens.refreshToken},
         );
       }
     } on Failure {
-      // Local sign-out must succeed even when the server revoke call fails;
-      // the refresh token still expires server-side.
+      // Local sign-out must succeed even when the server revoke call fails.
     } finally {
       await _tokenStore.clear();
     }

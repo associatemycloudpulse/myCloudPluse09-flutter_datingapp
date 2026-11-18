@@ -22,6 +22,15 @@ abstract interface class ChatRepository {
     required String text,
     required String clientMessageId,
     String? attachmentMediaId,
+    String? giftItemId,
+    String? emojiPackId,
+  });
+
+  /// Sends a purchased / coin gift into the conversation thread.
+  Future<Message> sendGift({
+    required String conversationId,
+    required String giftItemId,
+    required String clientMessageId,
   });
 
   /// Marks this message and earlier ones from the other member as read.

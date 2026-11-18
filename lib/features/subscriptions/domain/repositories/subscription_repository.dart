@@ -11,4 +11,18 @@ abstract interface class SubscriptionRepository {
 
   /// Asks the server to restore the entitlement for this account.
   Future<Entitlement> restore();
+
+  Future<List<SubscriptionHistoryItem>> history();
+
+  Future<SubscriptionCheckout> checkout({
+    required String productId,
+    required String platform,
+  });
+
+  Future<Entitlement> verifyCheckout({
+    required String checkoutId,
+    required String outcome,
+  });
+
+  Future<Entitlement> cancel();
 }

@@ -1,5 +1,6 @@
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_endpoints.dart';
+import '../../../../core/network/json.dart';
 import '../../../../core/network/pagination.dart';
 import '../../domain/entities/match.dart';
 import '../../domain/repositories/match_repository.dart';
@@ -16,6 +17,11 @@ class ApiMatchRepository implements MatchRepository {
   }) async => Paginated.fromJson(
     await _client.get(ApiEndpoints.matches, query: page.toQuery()),
     MatchDto.fromJson,
+  );
+
+  @override
+  Future<Match> getMatch(String matchId) async => MatchDto.fromJson(
+    asJson(await _client.get(ApiEndpoints.match(matchId))),
   );
 
   @override

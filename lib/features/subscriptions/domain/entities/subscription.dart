@@ -44,3 +44,29 @@ class Entitlement {
 
   bool get isPremium => tier != SubscriptionTier.free;
 }
+
+class SubscriptionCheckout {
+  const SubscriptionCheckout({
+    required this.checkoutId,
+    required this.productId,
+    required this.platform,
+  });
+
+  final String checkoutId;
+  final String productId;
+  final String platform;
+}
+
+class SubscriptionHistoryItem {
+  const SubscriptionHistoryItem({
+    required this.id,
+    required this.productId,
+    required this.status,
+    required this.at,
+  });
+
+  final String id;
+  final String productId;
+  final String status;
+  final DateTime at;
+}

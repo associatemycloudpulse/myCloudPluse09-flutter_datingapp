@@ -185,7 +185,12 @@ class MockPlatformRepository implements PlatformRepository {
   });
 
   @override
-  Future<void> registerDevice() => _backend.run('registerDevice', () {});
+  Future<String?> registerDevice() =>
+      _backend.run('registerDevice', () => 'device_mock_1');
+
+  @override
+  Future<void> unregisterDevice() =>
+      _backend.run('unregisterDevice', () {});
 
   @override
   Future<List<FaqItem>> faqs() =>

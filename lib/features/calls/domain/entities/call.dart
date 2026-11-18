@@ -68,6 +68,48 @@ class CallSession {
     CallStatus.ringing || CallStatus.accepted => false,
   };
 
+  /// Connected talk time when the call was accepted and later ended.
+  Duration? get talkDuration {
+    final start = acceptedAt;
+    final end = endedAt;
+    if (start == null || end == null) return null;
+    final value = end.difference(start);
+    return value.isNegative ? Duration.zero : value;
+  }
+
+  String get mediaLabel => type == CallType.video ? 'Video call' : 'Voice call';
+
+  String get durationLabel {
+    final duration = talkDuration;
+    if (duration == null) return '';
+    final total = duration.inSeconds;
+    final hours = total ~/ 3600;
+    final minutes = (total % 3600) ~/ 60;
+    final seconds = total % 60;
+    if (hours > 0) {
+      return '$hours:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    }
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  /// Chat / inbox preview text for this call relative to [myUserId].
+  String chatLabel({required String myUserId}) {
+    final outgoing = callerId == myUserId;
+    final media = mediaLabel;
+    return switch (status) {
+      CallStatus.missed =>
+        outgoing ? '$media · No answer' : 'Missed ${media.toLowerCase()}',
+      CallStatus.rejected =>
+        outgoing ? '$media declined' : 'Declined ${media.toLowerCase()}',
+      CallStatus.cancelled =>
+        outgoing ? 'Cancelled ${media.toLowerCase()}' : '$media cancelled',
+      CallStatus.busy => '$media · Busy',
+      CallStatus.ended =>
+        talkDuration == null ? '$media · Ended' : '$media · $durationLabel',
+      CallStatus.ringing || CallStatus.accepted => media,
+    };
+  }
+
   CallSession copyWith({
     CallStatus? status,
     DateTime? acceptedAt,

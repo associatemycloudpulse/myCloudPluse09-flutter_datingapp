@@ -1,6 +1,7 @@
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_endpoints.dart';
 import '../../../../core/network/json.dart';
+import '../../domain/entities/login_activity.dart';
 import '../../domain/entities/user_profile.dart';
 import '../../domain/repositories/profile_repository.dart';
 import '../models/profile_dto.dart';
@@ -51,4 +52,51 @@ class ApiProfileRepository implements ProfileRepository {
   Future<MyProfile> removePhoto(String photoId) async => MyProfileDto.fromJson(
     asJson(await _client.delete(ApiEndpoints.profilePhoto(photoId))),
   );
+
+  @override
+  Future<MyProfile> setInterests(List<String> interestIds) async =>
+      MyProfileDto.fromJson(
+        asJson(
+          await _client.put(
+            ApiEndpoints.profileInterests,
+            body: {'interestIds': interestIds},
+          ),
+        ),
+      );
+
+  @override
+  Future<MyProfile> reorderPhotos(List<String> photoIds) async =>
+      MyProfileDto.fromJson(
+        asJson(
+          await _client.patch(
+            ApiEndpoints.profilePhotoOrder,
+            body: {'photoIds': photoIds},
+          ),
+        ),
+      );
+
+  @override
+  Future<List<LoginActivity>> loginActivity() async {
+    final data = asJson(await _client.get(ApiEndpoints.profileLoginActivity));
+    return [
+      for (final json in asJsonList(data['items'], 'items'))
+        LoginActivity(
+          id: json.req<String>('id'),
+          at: json.reqDate('at'),
+          platform: json.opt<String>('platform'),
+          ip: json.opt<String>('ip'),
+          city: json.opt<String>('city'),
+        ),
+    ];
+  }
+
+  @override
+  Future<MediaInfo> getMedia(String mediaId) async {
+    final json = asJson(await _client.get(ApiEndpoints.media(mediaId)));
+    return MediaInfo(
+      id: json.req<String>('id'),
+      url: json.req<String>('url'),
+      purpose: json.req<String>('purpose'),
+    );
+  }
 }

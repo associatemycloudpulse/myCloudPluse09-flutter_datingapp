@@ -11,6 +11,7 @@ import '../../discovery/presentation/viewmodels/discovery_view_model.dart';
 import '../../matches/presentation/viewmodels/matches_view_model.dart';
 import '../../onboarding/data/services/photo_picker.dart';
 import '../../platform/domain/platform_models.dart';
+import '../../profile/domain/entities/login_activity.dart';
 import '../../profile/domain/entities/user_profile.dart';
 import '../../profile/presentation/viewmodels/my_profile_view_model.dart';
 
@@ -48,9 +49,17 @@ class _SheetHeader extends StatelessWidget {
 
 void showFailure(BuildContext context, Object error) {
   final message = error is Failure ? error.message : 'Something went wrong.';
+  final height = MediaQuery.sizeOf(context).height;
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(content: Text(message)));
+    ..showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.only(left: 12, right: 12, bottom: height - 120),
+        dismissDirection: DismissDirection.up,
+      ),
+    );
 }
 
 Future<String?> pickReportReason(BuildContext context) {
@@ -366,70 +375,196 @@ class LikesSheet extends ConsumerStatefulWidget {
   ConsumerState<LikesSheet> createState() => _LikesSheetState();
 }
 
-class _LikesSheetState extends ConsumerState<LikesSheet> {
-  late final Future<List<LikedPerson>> _likes;
+class _LikesSheetState extends ConsumerState<LikesSheet>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabs;
+  late Future<List<LikedPerson>> _received;
+  late Future<List<LikedPerson>> _sent;
 
   @override
   void initState() {
     super.initState();
-    _likes = ref.read(platformRepositoryProvider).likesReceived();
+    _tabs = TabController(length: 2, vsync: this);
+    final platform = ref.read(platformRepositoryProvider);
+    _received = platform.likesReceived();
+    _sent = platform.likesSent();
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  Widget _list(
+    ScrollController controller,
+    Future<List<LikedPerson>> future, {
+    required bool received,
+  }) {
+    return FutureBuilder<List<LikedPerson>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          final error = snapshot.error;
+          final count = error is Failure
+              ? error.details
+                    .map((detail) => detail.reason)
+                    .where((reason) => reason.startsWith('COUNT_'))
+                    .map((reason) => reason.substring('COUNT_'.length))
+                    .firstOrNull
+              : null;
+          return Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  count == null
+                      ? (received ? 'Likes' : 'Sent')
+                      : '$count ${count == '1' ? 'person likes' : 'people like'} you',
+                  style: Theme.of(context).textTheme.titleLarge,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  error is Failure
+                      ? (received
+                            ? 'Premium shows who liked you. Open Settings to subscribe.'
+                            : error.message)
+                      : 'Could not load likes.',
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          );
+        }
+        final people = snapshot.data ?? const <LikedPerson>[];
+        if (people.isEmpty) {
+          return Center(
+            child: Text(received ? 'No likes yet.' : 'No sent likes yet.'),
+          );
+        }
+        return ListView.builder(
+          controller: controller,
+          itemCount: people.length,
+          itemBuilder: (context, index) {
+            final person = people[index];
+            return ListTile(
+              title: Text(person.user.displayName),
+              subtitle: Text(
+                '${person.user.age} · ${person.user.city} · ${person.action}',
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
       expand: false,
-      initialChildSize: 0.7,
-      builder: (context, controller) => FutureBuilder<List<LikedPerson>>(
-        future: _likes,
+      initialChildSize: 0.75,
+      builder: (context, controller) => Column(
+        children: [
+          const SizedBox(height: AppSpacing.sm),
+          Text('Likes', style: Theme.of(context).textTheme.titleLarge),
+          TabBar(
+            controller: _tabs,
+            tabs: const [
+              Tab(text: 'Received'),
+              Tab(text: 'Sent'),
+            ],
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabs,
+              children: [
+                _list(controller, _received, received: true),
+                _list(controller, _sent, received: false),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class LoginActivitySheet extends ConsumerStatefulWidget {
+  const LoginActivitySheet({super.key});
+
+  static Future<void> show(BuildContext context) {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => const LoginActivitySheet(),
+    );
+  }
+
+  @override
+  ConsumerState<LoginActivitySheet> createState() => _LoginActivitySheetState();
+}
+
+class _LoginActivitySheetState extends ConsumerState<LoginActivitySheet> {
+  late final Future<List<LoginActivity>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = ref.read(profileRepositoryProvider).loginActivity();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.55,
+      builder: (context, controller) => FutureBuilder<List<LoginActivity>>(
+        future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            final error = snapshot.error;
-            final count = error is Failure
-                ? error.details
-                      .map((detail) => detail.reason)
-                      .where((reason) => reason.startsWith('COUNT_'))
-                      .map((reason) => reason.substring('COUNT_'.length))
-                      .firstOrNull
-                : null;
             return Padding(
               padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    count == null
-                        ? 'Likes'
-                        : '$count ${count == '1' ? 'person likes' : 'people like'} you',
-                    style: Theme.of(context).textTheme.titleLarge,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    error is Failure
-                        ? 'Premium shows who liked you. Open Settings to subscribe.'
-                        : 'Could not load likes.',
-                    textAlign: TextAlign.center,
-                  ),
-                ],
+              child: Text(
+                snapshot.error is Failure
+                    ? (snapshot.error! as Failure).message
+                    : 'Could not load login activity.',
               ),
             );
           }
-          final people = snapshot.data ?? const <LikedPerson>[];
-          if (people.isEmpty) {
-            return const Center(child: Text('No likes yet.'));
+          final items = snapshot.data ?? const <LoginActivity>[];
+          if (items.isEmpty) {
+            return const Center(child: Text('No login activity yet.'));
           }
           return ListView.builder(
             controller: controller,
-            itemCount: people.length,
+            itemCount: items.length + 1,
             itemBuilder: (context, index) {
-              final person = people[index];
+              if (index == 0) {
+                return const Padding(
+                  padding: EdgeInsets.all(AppSpacing.md),
+                  child: _SheetHeader('Login activity'),
+                );
+              }
+              final item = items[index - 1];
               return ListTile(
-                title: Text(person.user.displayName),
-                subtitle: Text('${person.user.age} · ${person.user.city}'),
+                title: Text(item.platform ?? 'Device'),
+                subtitle: Text(
+                  [
+                    item.at.toLocal().toString(),
+                    if (item.city != null) item.city!,
+                    if (item.ip != null) item.ip!,
+                  ].join(' · '),
+                ),
               );
             },
           );
@@ -792,7 +927,7 @@ Future<void> confirmDeleteAccount(BuildContext context, WidgetRef ref) async {
 }
 
 Future<void> signOutEverywhere(WidgetRef ref) async {
-  await ref.read(sessionViewModelProvider.notifier).signOut();
+  await ref.read(sessionViewModelProvider.notifier).signOut(allDevices: true);
 }
 
 Future<void> addProfilePhoto(BuildContext context, WidgetRef ref) async {

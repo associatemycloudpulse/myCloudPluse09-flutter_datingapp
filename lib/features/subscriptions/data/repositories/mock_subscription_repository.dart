@@ -10,6 +10,7 @@ class MockSubscriptionRepository implements SubscriptionRepository {
   MockSubscriptionRepository(this._backend);
 
   final MockBackend _backend;
+  final _history = <SubscriptionHistoryItem>[];
 
   @override
   Future<List<SubscriptionProduct>> getProducts() =>
@@ -25,7 +26,7 @@ class MockSubscriptionRepository implements SubscriptionRepository {
         final product =
             MockFixtures.products.where((p) => p.id == productId).firstOrNull ??
             (throw const Failure(ErrorCode.notFound));
-        return _backend.entitlement = Entitlement(
+        final entitlement = Entitlement(
           tier: product.tier,
           expiresAt: _backend.now().add(
             product.period == BillingPeriod.yearly
@@ -34,9 +35,57 @@ class MockSubscriptionRepository implements SubscriptionRepository {
           ),
           isSimulated: true,
         );
+        _backend.entitlement = entitlement;
+        _history.insert(
+          0,
+          SubscriptionHistoryItem(
+            id: 'sub_${_history.length + 1}',
+            productId: productId,
+            status: 'ACTIVE',
+            at: _backend.now(),
+          ),
+        );
+        return entitlement;
       });
 
   @override
   Future<Entitlement> restore() =>
       _backend.run('restore', () => _backend.entitlement);
+
+  @override
+  Future<List<SubscriptionHistoryItem>> history() =>
+      _backend.run('subscriptionHistory', () => List.unmodifiable(_history));
+
+  @override
+  Future<SubscriptionCheckout> checkout({
+    required String productId,
+    required String platform,
+  }) => _backend.run(
+    'subscriptionCheckout',
+    () => SubscriptionCheckout(
+      checkoutId: 'chk_$productId',
+      productId: productId,
+      platform: platform,
+    ),
+  );
+
+  @override
+  Future<Entitlement> verifyCheckout({
+    required String checkoutId,
+    required String outcome,
+  }) async {
+    if (outcome.toUpperCase() != 'SUCCESS') {
+      throw const Failure(
+        ErrorCode.validationError,
+        message: 'Payment was not completed.',
+      );
+    }
+    return purchase(checkoutId.replaceFirst('chk_', ''));
+  }
+
+  @override
+  Future<Entitlement> cancel() => _backend.run('cancelSubscription', () {
+    _backend.entitlement = const Entitlement.free();
+    return _backend.entitlement;
+  });
 }

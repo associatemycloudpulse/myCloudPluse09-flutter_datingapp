@@ -302,6 +302,17 @@ class ActiveCallController extends Notifier<ActiveCallState> {
 
   Future<void> switchCamera() => _engine.switchCamera();
 
+  Future<void> sendGift(String giftItemId) async {
+    final call = state.call;
+    if (call == null) return;
+    try {
+      await _repo.sendGift(callId: call.id, giftItemId: giftItemId);
+      state = state.copyWith(statusLabel: 'Gift sent');
+    } on Failure catch (failure) {
+      state = state.copyWith(failure: failure, statusLabel: failure.message);
+    }
+  }
+
   AgoraCallEngine get engine => _engine;
 
   void clearFailure() {

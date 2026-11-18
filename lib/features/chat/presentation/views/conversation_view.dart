@@ -13,6 +13,7 @@ import '../../../../core/realtime/chat_socket.dart';
 import '../../../../core/realtime/presence.dart';
 import '../../../../core/widgets/async_value_view.dart';
 import '../../../../core/widgets/profile_avatar.dart';
+import '../../../../core/widgets/top_snack.dart';
 import '../../../calls/domain/entities/call.dart';
 import '../../../calls/presentation/viewmodels/active_call_controller.dart';
 import '../../../discovery/presentation/widgets/profile_card.dart';
@@ -22,6 +23,7 @@ import '../../data/services/save_chat_photo.dart';
 import '../../domain/entities/chat.dart';
 import '../../domain/repositories/chat_repository.dart';
 import '../viewmodels/conversation_view_model.dart';
+import '../widgets/chat_gift_sheet.dart';
 
 class ConversationView extends ConsumerStatefulWidget {
   const ConversationView({super.key, required this.conversationId});
@@ -80,19 +82,15 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
   }
 
   Future<void> _send() async {
+    final text = _input.text;
+    if (text.trim().isEmpty) return;
+    _input.clear();
     _stopTyping();
     final provider = conversationViewModelProvider(widget.conversationId);
-    final sent = await ref.read(provider.notifier).send(_input.text);
-    if (!mounted) return;
-    if (sent) {
-      _input.clear();
-    } else {
-      final failure = ref.read(provider).value?.sendFailure;
-      if (failure != null) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(failure.message)));
-      }
-    }
+    final sent = await ref.read(provider.notifier).send(text);
+    if (!mounted || sent) return;
+    final failure = ref.read(provider).value?.sendFailure;
+    if (failure != null) showTopSnackBar(context, failure.message);
   }
 
   Future<void> _sendPhoto() async {
@@ -102,9 +100,22 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
     final sent = await ref.read(provider.notifier).sendPhoto(image);
     if (!mounted || sent) return;
     final failure = ref.read(provider).value?.sendFailure;
-    if (failure != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(failure.message)));
-    }
+    if (failure != null) showTopSnackBar(context, failure.message);
+  }
+
+  void _openPhoto(String url) {
+    final provider = profileImageProvider(url);
+    if (provider == null) return;
+    Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        opaque: false,
+        barrierColor: Colors.black,
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            _FullScreenPhoto(image: provider),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+            FadeTransition(opacity: animation, child: child),
+      ),
+    );
   }
 
   Future<void> _startCall(CallType type) async {
@@ -116,9 +127,7 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
     if (!mounted) return;
     final state = ref.read(activeCallProvider);
     if (state.failure != null) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(state.failure!.message)));
+      showTopSnackBar(context, state.failure!.message);
       controller.clearFailure();
       return;
     }
@@ -175,8 +184,7 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
     final failure = await ref.read(provider.notifier).deleteConversation();
     if (!mounted) return;
     if (failure != null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(failure.message)));
+      showTopSnackBar(context, failure.message);
       return;
     }
     context.go(RoutePaths.chats);
@@ -231,13 +239,12 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
       try {
         await saveChatPhoto(url);
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Photo saved')),
-        );
+        showTopSnackBar(context, 'Photo saved');
       } on Object catch (error) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$error'.replaceFirst('Bad state: ', ''))),
+        showTopSnackBar(
+          context,
+          '$error'.replaceFirst('Bad state: ', ''),
         );
       }
       return;
@@ -259,8 +266,7 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
       _ => null,
     };
     if (!mounted || failure == null) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(failure.message)));
+    showTopSnackBar(context, failure.message);
   }
 
   @override
@@ -281,7 +287,8 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 76,
+        centerTitle: false,
+        titleSpacing: 0,
         shape: Border(
           bottom: BorderSide(color: theme.colorScheme.outlineVariant),
         ),
@@ -325,32 +332,42 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
             ? const Text('Chat')
             : GestureDetector(
                 onTap: _openProfile,
-                child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ProfileAvatar(
-                    name: other.displayName,
-                    url: other.primaryPhotoUrl,
-                    size: 40,
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    other.displayName,
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
+                behavior: HitTestBehavior.opaque,
+                child: Row(
+                  children: [
+                    ProfileAvatar(
+                      name: other.displayName,
+                      url: other.primaryPhotoUrl,
+                      size: 40,
                     ),
-                  ),
-                  if (status != null)
-                    Text(
-                      status,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: typing || online == true
-                            ? AppColors.primary
-                            : theme.colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            other.displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          if (status != null)
+                            Text(
+                              status,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: typing || online == true
+                                    ? AppColors.primary
+                                    : theme.colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                ],
+                  ],
                 ),
               ),
       ),
@@ -401,22 +418,34 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
                       itemBuilder: (context, index) {
                         final message =
                             state.messages[state.messages.length - 1 - index];
+                        if (message.isCallEvent) {
+                          return _CallEventTile(message: message);
+                        }
                         final mine =
                             message.senderId !=
                             state.conversation.otherUser.id;
                         final lastOwn = state.messages.lastWhere(
-                          (item) => item.senderId != state.conversation.otherUser.id,
+                          (item) =>
+                              !item.isCallEvent &&
+                              item.senderId !=
+                                  state.conversation.otherUser.id,
                           orElse: () => message,
                         );
                         return _Bubble(
                           message: message,
                           isMine: mine,
+                          otherName: state.conversation.otherUser.displayName,
+                          otherPhotoUrl:
+                              state.conversation.otherUser.primaryPhotoUrl,
                           showRead: mine &&
                               !message.isUnsent &&
                               message.id == lastOwn.id &&
                               message.status == MessageStatus.read,
                           onLongPress: () =>
                               _onMessageActions(message, isMine: mine),
+                          onPhotoTap: message.attachment == null
+                              ? null
+                              : () => _openPhoto(message.attachment!.url),
                         );
                       },
                     ),
@@ -460,8 +489,17 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
                       IconButton(
                         key: const Key('chat.photo'),
                         tooltip: 'Send a photo',
-                        onPressed: state.isSending ? null : _sendPhoto,
+                        onPressed: _sendPhoto,
                         icon: const Icon(Icons.image_outlined),
+                      ),
+                      IconButton(
+                        key: const Key('chat.gifts'),
+                        tooltip: 'Gifts & paid emoji',
+                        onPressed: () => ChatGiftSheet.show(
+                          context,
+                          conversationId: widget.conversationId,
+                        ),
+                        icon: const Icon(Icons.card_giftcard_outlined),
                       ),
                       Expanded(
                         child: TextField(
@@ -475,7 +513,7 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
                           textInputAction: TextInputAction.send,
                           onSubmitted: (_) => _send(),
                           decoration: InputDecoration(
-                            hintText: 'Type a message',
+                            hintText: 'Message',
                             counterText: '',
                             filled: true,
                             fillColor:
@@ -509,13 +547,14 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
                         ),
                       ),
                       const SizedBox(width: AppSpacing.xs),
-                      TextButton(
+                      IconButton.filled(
                         key: const Key('chat.send'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.primary,
+                        style: IconButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.white,
                         ),
-                        onPressed: state.isSending ? null : _send,
-                        child: const Text('Send'),
+                        onPressed: _send,
+                        icon: const Icon(Icons.send_rounded),
                       ),
                     ],
                   ),
@@ -529,103 +568,264 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
   }
 }
 
+class _CallEventTile extends StatelessWidget {
+  const _CallEventTile({required this.message});
+
+  final Message message;
+
+  @override
+  Widget build(BuildContext context) {
+    final call = message.call!;
+    final theme = Theme.of(context);
+    final missed = call.isMissed;
+    final color = missed
+        ? theme.colorScheme.error
+        : theme.colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Center(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  call.isVideo
+                      ? (missed
+                            ? Icons.videocam_off_outlined
+                            : Icons.videocam_outlined)
+                      : (missed
+                            ? Icons.call_missed_outgoing
+                            : Icons.call_outlined),
+                  size: 18,
+                  color: color,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  call.label,
+                  style: theme.textTheme.labelLarge?.copyWith(color: color),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _Bubble extends StatelessWidget {
   const _Bubble({
     required this.message,
     required this.isMine,
+    required this.otherName,
+    this.otherPhotoUrl,
     this.showRead = false,
     this.onLongPress,
+    this.onPhotoTap,
   });
 
   final Message message;
   final bool isMine;
+  final String otherName;
+  final String? otherPhotoUrl;
   final bool showRead;
   final VoidCallback? onLongPress;
+  final VoidCallback? onPhotoTap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    const big = Radius.circular(20);
-    const small = Radius.circular(6);
+    const big = Radius.circular(18);
+    const small = Radius.circular(5);
     final unsent = message.isUnsent;
-    return Align(
-      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-      child: GestureDetector(
-        onLongPress: onLongPress,
-        child: Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.sizeOf(context).width * 0.75,
-          ),
-          margin: const EdgeInsets.symmetric(vertical: 3),
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.sm + 3,
-          ),
-          decoration: BoxDecoration(
-            gradient: isMine && !unsent ? AppColors.primaryGradient : null,
-            color: unsent
-                ? scheme.surfaceContainerHighest
-                : (isMine ? null : scheme.surfaceContainerLowest),
-            borderRadius: BorderRadius.only(
-              topLeft: big,
-              topRight: big,
-              bottomLeft: isMine ? big : small,
-              bottomRight: isMine ? small : big,
+
+    // Deleted messages: no bubble box — just a light centered label.
+    if (unsent) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Center(
+          child: Text(
+            'This message was deleted',
+            style: TextStyle(
+              color: scheme.onSurfaceVariant,
+              fontSize: 12,
+              fontStyle: FontStyle.italic,
             ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (unsent)
-                Text(
-                  'This message was deleted',
-                  style: TextStyle(
-                    color: scheme.onSurfaceVariant,
-                    fontSize: 15,
-                    fontStyle: FontStyle.italic,
-                    height: 1.3,
-                  ),
-                )
-              else ...[
-                if (message.attachment != null &&
-                    profileImageProvider(message.attachment!.url) != null)
-                  ClipRRect(
+        ),
+      );
+    }
+
+    final bubble = GestureDetector(
+      onLongPress: onLongPress,
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width * 0.72,
+        ),
+        margin: const EdgeInsets.symmetric(vertical: 2),
+        padding: EdgeInsets.symmetric(
+          horizontal: message.attachment != null ? 4 : AppSpacing.md,
+          vertical: message.attachment != null ? 4 : AppSpacing.sm + 2,
+        ),
+        decoration: BoxDecoration(
+          gradient: isMine ? AppColors.primaryGradient : null,
+          color: isMine ? null : scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.only(
+            topLeft: big,
+            topRight: big,
+            bottomLeft: isMine ? big : small,
+            bottomRight: isMine ? small : big,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (message.gift != null) ...[
+              Center(
+                child: Text(
+                  message.gift!.emoji.isNotEmpty
+                      ? message.gift!.emoji
+                      : '🎁',
+                  style: const TextStyle(fontSize: 44),
+                ),
+              ),
+              if (message.gift!.imageUrl.isNotEmpty &&
+                  profileImageProvider(message.gift!.imageUrl) != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: SizedBox(
-                      width: 180,
-                      height: 180,
+                      width: 120,
+                      height: 120,
                       child: Image(
-                        image: profileImageProvider(message.attachment!.url)!,
+                        image: profileImageProvider(message.gift!.imageUrl)!,
                         fit: BoxFit.cover,
                       ),
                     ),
                   ),
-                if (message.text.isNotEmpty)
-                  Padding(
-                    padding: EdgeInsets.only(
-                      top: message.attachment == null ? 0 : 6,
-                    ),
-                    child: Text(
-                      message.text,
-                      style: TextStyle(
-                        color: isMine ? AppColors.white : scheme.onSurface,
-                        fontSize: 16,
-                        height: 1.3,
-                      ),
-                    ),
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+                child: Text(
+                  message.gift!.name,
+                  style: TextStyle(
+                    color: isMine ? AppColors.white : scheme.onSurface,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
                   ),
-                if (showRead)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 2),
-                    child: Text(
-                      'Read',
-                      style: TextStyle(color: AppColors.white, fontSize: 11),
-                    ),
-                  ),
-              ],
+                ),
+              ),
             ],
-          ),
+            if (message.attachment != null &&
+                profileImageProvider(message.attachment!.url) != null)
+              GestureDetector(
+                onTap: onPhotoTap,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: SizedBox(
+                    width: 220,
+                    height: 220,
+                    child: Image(
+                      image: profileImageProvider(message.attachment!.url)!,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+              ),
+            if (message.text.isNotEmpty && message.gift == null)
+              Padding(
+                padding: EdgeInsets.only(
+                  top: message.attachment == null ? 0 : 6,
+                  left: message.attachment == null ? 0 : 8,
+                  right: message.attachment == null ? 0 : 8,
+                  bottom: message.attachment == null ? 0 : 4,
+                ),
+                child: Text(
+                  message.text,
+                  style: TextStyle(
+                    color: isMine ? AppColors.white : scheme.onSurface,
+                    fontSize: 16,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+            if (showRead || message.id.startsWith('local_'))
+              Padding(
+                padding: const EdgeInsets.only(top: 2, right: 4),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    message.id.startsWith('local_')
+                        ? 'Sending…'
+                        : (showRead ? 'Read' : ''),
+                    style: TextStyle(
+                      color: isMine
+                          ? AppColors.white.withValues(alpha: 0.85)
+                          : scheme.onSurfaceVariant,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
+      ),
+    );
+
+    if (isMine) {
+      return Align(alignment: Alignment.centerRight, child: bubble);
+    }
+
+    // Incoming: avatar on the left like WhatsApp.
+    return Padding(
+      padding: const EdgeInsets.only(right: 40),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          ProfileAvatar(name: otherName, url: otherPhotoUrl, size: 28),
+          const SizedBox(width: 6),
+          Flexible(child: bubble),
+        ],
+      ),
+    );
+  }
+}
+
+class _FullScreenPhoto extends StatelessWidget {
+  const _FullScreenPhoto({required this.image});
+
+  final ImageProvider image;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          Center(
+            child: InteractiveViewer(
+              minScale: 1,
+              maxScale: 4,
+              child: Image(image: image, fit: BoxFit.contain),
+            ),
+          ),
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topRight,
+              child: IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close, color: Colors.white, size: 28),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

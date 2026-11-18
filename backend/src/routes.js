@@ -170,6 +170,21 @@ function pushNotice(userId, type, title, body, data) {
     createdAt: new Date().toISOString(),
     readAt: null,
   });
+  // Fire-and-forget FCM so killed apps still get message/match alerts.
+  import('./push-fcm.js')
+    .then(({ sendFcmPush }) =>
+      sendFcmPush(
+        userId,
+        store.devices.filter((device) => device.userId === userId),
+        {
+          title,
+          body,
+          data: { type, ...(data ?? {}) },
+          isCall: type === 'INCOMING_CALL',
+        },
+      ),
+    )
+    .catch((error) => console.warn('FCM push skipped:', error));
 }
 
 export function participantConversation(userId, conversationId) {

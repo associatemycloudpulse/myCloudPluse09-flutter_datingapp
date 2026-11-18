@@ -1,3 +1,4 @@
+import '../../../../core/errors/failure.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_endpoints.dart';
 import '../../../../core/network/json.dart';
@@ -43,6 +44,8 @@ class ApiChatRepository implements ChatRepository {
     required String text,
     required String clientMessageId,
     String? attachmentMediaId,
+    String? giftItemId,
+    String? emojiPackId,
   }) async => MessageDto.fromJson(
     asJson(
       await _client.post(
@@ -51,11 +54,71 @@ class ApiChatRepository implements ChatRepository {
           'text': text.trim(),
           'clientMessageId': clientMessageId,
           'attachmentMediaId': ?attachmentMediaId,
+          'giftItemId': ?giftItemId,
+          'emojiPackId': ?emojiPackId,
+          if (giftItemId != null) 'type': 'GIFT',
         },
         idempotencyKey: clientMessageId,
       ),
     ),
   );
+
+  @override
+  Future<Message> sendGift({
+    required String conversationId,
+    required String giftItemId,
+    required String clientMessageId,
+  }) async {
+    // Prefer conversation gifts (mirrors call gifts). Fall back to message
+    // payload / store send-gift for backends that use those shapes.
+    try {
+      final data = asJson(
+        await _client.post(
+          ApiEndpoints.conversationGifts(conversationId),
+          body: {
+            'giftItemId': giftItemId,
+            'clientMessageId': clientMessageId,
+          },
+          idempotencyKey: clientMessageId,
+        ),
+      );
+      if (data.containsKey('id') && data.containsKey('conversationId')) {
+        return MessageDto.fromJson(data);
+      }
+      final nested = data['message'];
+      if (nested is Map) return MessageDto.fromJson(asJson(nested, 'message'));
+    } on Failure catch (failure) {
+      if (failure.code != ErrorCode.notFound) rethrow;
+    }
+
+    try {
+      final data = asJson(
+        await _client.post(
+          ApiEndpoints.storeSendGift,
+          body: {
+            'giftItemId': giftItemId,
+            'conversationId': conversationId,
+            'clientMessageId': clientMessageId,
+          },
+          idempotencyKey: clientMessageId,
+        ),
+      );
+      if (data.containsKey('id') && data.containsKey('conversationId')) {
+        return MessageDto.fromJson(data);
+      }
+      final nested = data['message'];
+      if (nested is Map) return MessageDto.fromJson(asJson(nested, 'message'));
+    } on Failure catch (failure) {
+      if (failure.code != ErrorCode.notFound) rethrow;
+    }
+
+    return sendMessage(
+      conversationId: conversationId,
+      text: '',
+      clientMessageId: clientMessageId,
+      giftItemId: giftItemId,
+    );
+  }
 
   @override
   Future<void> markRead(String messageId) async {

@@ -15,12 +15,16 @@ const _mockAvatarScheme = 'mock://avatar/';
 /// Prefetching and display must use this same function so the cache key
 /// matches and a prefetched photo appears without a loading frame.
 ImageProvider? profileImageProvider(String? url) {
-  if (url == null) return null;
+  if (url == null || url.isEmpty) return null;
   if (url.startsWith('https://') || url.startsWith('http://')) {
     return NetworkImage(url);
   }
   if (url.startsWith('file://')) {
     return FileImage(File(Uri.parse(url).toFilePath()));
+  }
+  // Absolute local paths (optimistic chat photo previews).
+  if (url.startsWith('/') || RegExp(r'^[A-Za-z]:[\\/]').hasMatch(url)) {
+    return FileImage(File(url));
   }
   if (url.startsWith(_mockAvatarScheme)) {
     final id = url.substring(_mockAvatarScheme.length);

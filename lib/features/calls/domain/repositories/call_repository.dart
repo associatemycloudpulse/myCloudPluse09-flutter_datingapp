@@ -17,4 +17,10 @@ abstract class CallRepository {
   Future<ActiveCallSnapshot> getActive();
 
   Future<List<CallSession>> listHistory({int limit = 20});
+
+  /// Sends a store gift during an active call.
+  Future<void> sendGift({
+    required String callId,
+    required String giftItemId,
+  });
 }

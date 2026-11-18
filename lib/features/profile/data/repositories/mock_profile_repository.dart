@@ -1,5 +1,6 @@
 import '../../../../core/errors/failure.dart';
 import '../../../../dev/mock/mock_backend.dart';
+import '../../domain/entities/login_activity.dart';
 import '../../domain/entities/user_profile.dart';
 import '../../domain/repositories/profile_repository.dart';
 
@@ -121,6 +122,56 @@ class MockProfileRepository implements ProfileRepository {
     await _backend.saveAccount();
     return profile;
   }
+
+  @override
+  Future<MyProfile> setInterests(List<String> interestIds) async {
+    if (interestIds.isEmpty || interestIds.length > 10) {
+      throw const Failure(
+        ErrorCode.validationError,
+        details: [FieldError(field: 'interestIds', reason: 'COUNT_1_10')],
+      );
+    }
+    return updateMyProfile(ProfileUpdate(interests: interestIds));
+  }
+
+  @override
+  Future<MyProfile> reorderPhotos(List<String> photoIds) async {
+    final profile = await _backend.run('reorderPhotos', () {
+      final current = _withIds(_backend.me);
+      if (photoIds.length != current.photoIds.length ||
+          !photoIds.every(current.photoIds.contains)) {
+        throw const Failure(ErrorCode.validationError);
+      }
+      final urls = [
+        for (final id in photoIds)
+          current.photoUrls[current.photoIds.indexOf(id)],
+      ];
+      _backend.me = current.copyWith(photoUrls: urls, photoIds: photoIds);
+      return _myProfile();
+    });
+    await _backend.saveAccount();
+    return profile;
+  }
+
+  @override
+  Future<List<LoginActivity>> loginActivity() =>
+      _backend.run('loginActivity', () {
+        return [
+          LoginActivity(
+            id: 'login_1',
+            at: _backend.now(),
+            platform: 'ANDROID',
+            city: _backend.me.city,
+          ),
+        ];
+      });
+
+  @override
+  Future<MediaInfo> getMedia(String mediaId) => _backend.run('getMedia', () {
+    final path = _backend.media[mediaId];
+    if (path == null) throw const Failure(ErrorCode.notFound);
+    return MediaInfo(id: mediaId, url: path, purpose: 'PROFILE_PHOTO');
+  });
 
   UserProfile _withIds(UserProfile profile) {
     if (profile.photoIds.length == profile.photoUrls.length) return profile;

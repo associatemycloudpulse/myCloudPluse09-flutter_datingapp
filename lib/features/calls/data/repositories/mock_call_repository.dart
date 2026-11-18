@@ -116,6 +116,15 @@ class MockCallRepository implements CallRepository {
     return _history.take(limit.clamp(1, 50)).toList(growable: false);
   }
 
+  @override
+  Future<void> sendGift({
+    required String callId,
+    required String giftItemId,
+  }) async {
+    await _delay();
+    _require(callId);
+  }
+
   CallSession _require(String callId) {
     final call = _active;
     if (call == null || call.id != callId) {

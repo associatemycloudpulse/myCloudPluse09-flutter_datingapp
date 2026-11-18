@@ -86,6 +86,36 @@ class SubscriptionViewModel extends AsyncNotifier<SubscriptionState> {
       );
     }
   }
+
+  Future<void> cancel() async {
+    final current = state.value;
+    if (current == null || current.purchasingProductId != null) return;
+    state = AsyncData(
+      SubscriptionState(
+        entitlement: current.entitlement,
+        products: current.products,
+        purchasingProductId: 'cancel',
+      ),
+    );
+    try {
+      final entitlement = await ref
+          .read(subscriptionRepositoryProvider)
+          .cancel();
+      if (!ref.mounted) return;
+      state = AsyncData(
+        SubscriptionState(entitlement: entitlement, products: current.products),
+      );
+    } on Failure catch (failure) {
+      if (!ref.mounted) return;
+      state = AsyncData(
+        SubscriptionState(
+          entitlement: current.entitlement,
+          products: current.products,
+          purchaseFailure: failure,
+        ),
+      );
+    }
+  }
 }
 
 final subscriptionViewModelProvider =

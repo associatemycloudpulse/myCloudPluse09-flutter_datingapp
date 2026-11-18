@@ -5,7 +5,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_spacing.dart';
+import '../../../../core/di/repository_providers.dart';
 import '../../../../core/widgets/profile_avatar.dart';
+import '../../../store/domain/entities/store.dart';
 import '../../domain/entities/call.dart';
 import '../viewmodels/active_call_controller.dart';
 
@@ -150,6 +152,67 @@ class CallView extends ConsumerWidget {
                       onMute: controller.toggleMute,
                       onCamera: controller.toggleCamera,
                       onSwitchCamera: isVideo ? controller.switchCamera : null,
+                      onGift: () async {
+                        final store = ref.read(storeRepositoryProvider);
+                        final catalog = await store.catalog();
+                        final wallet = await store.wallet();
+                        final gifts = catalog
+                            .where((item) => item.kind == StoreItemKind.gift)
+                            .toList();
+                        if (gifts.isEmpty || !context.mounted) return;
+                        final selected = await showModalBottomSheet<StoreItem>(
+                          context: context,
+                          builder: (sheetContext) => SafeArea(
+                            child: ListView(
+                              shrinkWrap: true,
+                              children: [
+                                const ListTile(
+                                  title: Text('Send a gift'),
+                                  subtitle: Text(
+                                    'Buy with coins first if it is not free.',
+                                  ),
+                                ),
+                                for (final gift in gifts)
+                                  ListTile(
+                                    leading: Text(
+                                      gift.displayGlyph,
+                                      style: const TextStyle(fontSize: 28),
+                                    ),
+                                    title: Text(gift.name),
+                                    subtitle: Text(
+                                      gift.isFreeGift ||
+                                              wallet.ownsGift(gift.id)
+                                          ? 'Ready to send'
+                                          : (gift.priceLabel ??
+                                              '${gift.priceCoins ?? 0} coins'),
+                                    ),
+                                    onTap: () =>
+                                        Navigator.pop(sheetContext, gift),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        );
+                        if (selected == null || !context.mounted) return;
+                        if (!selected.isFreeGift &&
+                            !wallet.ownsGift(selected.id)) {
+                          try {
+                            await store.buyWithCoins(itemId: selected.id);
+                          } catch (_) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Buy coins / this gift in Store first.',
+                                  ),
+                                ),
+                              );
+                            }
+                            return;
+                          }
+                        }
+                        await controller.sendGift(selected.id);
+                      },
                       onHangUp: () async {
                         await controller.hangUp();
                         if (context.mounted && context.canPop()) {
@@ -262,6 +325,7 @@ class _InCallActions extends StatelessWidget {
     required this.onCamera,
     required this.onHangUp,
     this.onSwitchCamera,
+    this.onGift,
   });
 
   final bool muted;
@@ -271,6 +335,7 @@ class _InCallActions extends StatelessWidget {
   final VoidCallback onCamera;
   final VoidCallback onHangUp;
   final VoidCallback? onSwitchCamera;
+  final VoidCallback? onGift;
 
   @override
   Widget build(BuildContext context) {
@@ -278,27 +343,34 @@ class _InCallActions extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         _RoundAction(
-          color: muted ? AppColors.primary : Colors.white24,
+          color: muted ? AppColors.primary : Colors.black,
           icon: muted ? Icons.mic_off : Icons.mic,
           label: muted ? 'Unmute' : 'Mute',
           onTap: onMute,
         ),
         if (showCamera)
           _RoundAction(
-            color: cameraOn ? Colors.white24 : AppColors.primary,
+            color: cameraOn ? Colors.black : AppColors.primary,
             icon: cameraOn ? Icons.videocam : Icons.videocam_off,
             label: 'Camera',
             onTap: onCamera,
           ),
         if (onSwitchCamera != null)
           _RoundAction(
-            color: Colors.white24,
+            color: Colors.black,
             icon: Icons.cameraswitch,
             label: 'Flip',
             onTap: onSwitchCamera!,
           ),
+        if (onGift != null)
+          _RoundAction(
+            color: Colors.black,
+            icon: Icons.card_giftcard,
+            label: 'Gift',
+            onTap: onGift!,
+          ),
         _RoundAction(
-          color: Colors.redAccent,
+          color: Colors.red.shade700,
           icon: Icons.call_end,
           label: 'End',
           onTap: onHangUp,

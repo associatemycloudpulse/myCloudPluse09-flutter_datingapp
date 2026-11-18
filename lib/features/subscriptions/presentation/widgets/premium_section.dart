@@ -61,6 +61,19 @@ class PremiumSection extends ConsumerWidget {
                   ),
                 ),
               ],
+              const SizedBox(height: AppSpacing.sm),
+              TextButton(
+                onPressed: state.purchasingProductId == null
+                    ? () =>
+                          ref.read(subscriptionViewModelProvider.notifier).cancel()
+                    : null,
+                child: state.purchasingProductId == 'cancel'
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Cancel plan'),
+              ),
             ],
           ),
         ),

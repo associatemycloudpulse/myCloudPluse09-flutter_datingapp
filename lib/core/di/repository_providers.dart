@@ -29,6 +29,9 @@ import '../../features/profile/domain/repositories/profile_repository.dart';
 import '../../features/subscriptions/data/repositories/api_subscription_repository.dart';
 import '../../features/subscriptions/data/repositories/mock_subscription_repository.dart';
 import '../../features/subscriptions/domain/repositories/subscription_repository.dart';
+import '../../features/store/data/repositories/api_store_repository.dart';
+import '../../features/store/data/repositories/mock_store_repository.dart';
+import '../../features/store/domain/repositories/store_repository.dart';
 import '../../features/platform/data/api_platform_repository.dart';
 import '../../features/platform/data/mock_platform_repository.dart';
 import '../../features/platform/domain/platform_repository.dart';
@@ -96,6 +99,12 @@ final subscriptionRepositoryProvider = Provider<SubscriptionRepository>(
   (ref) => _useMock(ref, DataFeature.subscriptions)
       ? MockSubscriptionRepository(ref.watch(mockBackendProvider))
       : ApiSubscriptionRepository(ref.watch(apiClientProvider)),
+);
+
+final storeRepositoryProvider = Provider<StoreRepository>(
+  (ref) => _useMock(ref, DataFeature.store)
+      ? MockStoreRepository()
+      : ApiStoreRepository(ref.watch(apiClientProvider)),
 );
 
 final platformRepositoryProvider = Provider<PlatformRepository>(

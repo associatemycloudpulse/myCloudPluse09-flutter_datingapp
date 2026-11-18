@@ -1,3 +1,4 @@
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,10 +6,18 @@ import 'app/app.dart';
 import 'app/config/app_config.dart';
 import 'app/config/environment.dart';
 import 'core/errors/app_exception.dart';
+import 'core/push/push_notifications.dart';
 import 'dev/mock/mock_account_store.dart';
+import 'firebase_options.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Must be registered before runApp so killed-state data messages are handled.
+  if (DefaultFirebaseOptions.isConfigured) {
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  }
+  await PushNotifications.initialize();
 
   final AppConfig config;
   try {

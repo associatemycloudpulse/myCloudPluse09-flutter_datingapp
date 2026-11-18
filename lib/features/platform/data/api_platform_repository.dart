@@ -1,8 +1,11 @@
 import 'dart:io';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_endpoints.dart';
 import '../../../core/network/json.dart';
+import '../../../core/push/push_notifications.dart';
 import '../../profile/data/models/profile_dto.dart';
 import '../domain/platform_models.dart';
 import '../domain/platform_repository.dart';
@@ -11,6 +14,7 @@ class ApiPlatformRepository implements PlatformRepository {
   ApiPlatformRepository(this._client);
 
   final ApiClient _client;
+  static const _deviceIdKey = 'dating_cloud_device_id';
 
   @override
   Future<List<LikedPerson>> likesReceived() async => _likes(
@@ -129,15 +133,43 @@ class ApiPlatformRepository implements PlatformRepository {
   );
 
   @override
-  Future<void> registerDevice() async {
-    await _client.post(
-      ApiEndpoints.devices,
-      body: {
-        'platform': Platform.isIOS ? 'IOS' : 'ANDROID',
-        'pushToken': 'local-device-dating-cloud',
-        'appVersion': '1.0.0',
-      },
+  Future<String?> registerDevice() async {
+    final fcmToken = await PushNotifications.resolvePushToken();
+    // Backend rejects tokens shorter than 8 chars. Prefer real FCM; fall back
+    // only so local/dev builds without Firebase still pass device upsert.
+    final pushToken =
+        (fcmToken != null && fcmToken.length >= 8)
+            ? fcmToken
+            : 'local-device-dating-cloud';
+    final json = asJson(
+      await _client.post(
+        ApiEndpoints.devices,
+        body: {
+          'platform': Platform.isIOS ? 'IOS' : 'ANDROID',
+          'pushToken': pushToken,
+          'appVersion': '1.0.0',
+          'locale': Platform.localeName,
+        },
+      ),
     );
+    final id = json.opt<String>('id');
+    if (id != null && id.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_deviceIdKey, id);
+    }
+    return id;
+  }
+
+  @override
+  Future<void> unregisterDevice() async {
+    final prefs = await SharedPreferences.getInstance();
+    final id = prefs.getString(_deviceIdKey);
+    if (id == null || id.isEmpty) return;
+    try {
+      await _client.delete(ApiEndpoints.device(id));
+    } finally {
+      await prefs.remove(_deviceIdKey);
+    }
   }
 
   @override

@@ -4,6 +4,7 @@ import '../../../../dev/mock/mock_backend.dart';
 import '../../../../dev/mock/mock_fixtures.dart';
 import '../../domain/entities/chat.dart';
 import '../../domain/repositories/chat_repository.dart';
+import '../../../store/data/repositories/mock_store_repository.dart';
 
 class MockChatRepository implements ChatRepository {
   MockChatRepository(this._backend);
@@ -54,6 +55,8 @@ class MockChatRepository implements ChatRepository {
     required String text,
     required String clientMessageId,
     String? attachmentMediaId,
+    String? giftItemId,
+    String? emojiPackId,
   }) => _backend.run('sendMessage', () {
     _conversation(conversationId);
     final existing = _backend.messages[conversationId]!.where(
@@ -76,8 +79,20 @@ class MockChatRepository implements ChatRepository {
         url: path.contains('://') ? path : Uri.file(path).toString(),
       );
     }
+    MessageGift? gift;
+    if (giftItemId != null && giftItemId.isNotEmpty) {
+      final item = MockStoreRepository.catalogItems
+          .where((entry) => entry.id == giftItemId)
+          .firstOrNull;
+      gift = MessageGift(
+        itemId: giftItemId,
+        name: item?.name ?? 'Gift',
+        emoji: item?.emoji ?? '🎁',
+        imageUrl: item?.imageUrl ?? '',
+      );
+    }
     final trimmed = text.trim();
-    if ((trimmed.isEmpty && attachment == null) ||
+    if ((trimmed.isEmpty && attachment == null && gift == null) ||
         trimmed.length > ChatRepository.maxMessageLength) {
       throw const Failure(
         ErrorCode.validationError,
@@ -90,13 +105,26 @@ class MockChatRepository implements ChatRepository {
         id: _backend.nextId('msg'),
         conversationId: conversationId,
         senderId: MockFixtures.currentUserId,
-        text: trimmed,
+        text: gift == null ? trimmed : (trimmed.isEmpty ? gift.name : trimmed),
         sentAt: _backend.now(),
         clientMessageId: clientMessageId,
         attachment: attachment,
+        gift: gift,
       ),
     );
   });
+
+  @override
+  Future<Message> sendGift({
+    required String conversationId,
+    required String giftItemId,
+    required String clientMessageId,
+  }) => sendMessage(
+    conversationId: conversationId,
+    text: '',
+    clientMessageId: clientMessageId,
+    giftItemId: giftItemId,
+  );
 
   @override
   Future<void> markRead(String messageId) => _backend.run('markRead', () {

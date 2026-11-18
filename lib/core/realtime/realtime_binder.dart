@@ -9,6 +9,7 @@ import '../../app/config/environment.dart';
 import '../../app/router/app_router.dart';
 import '../../app/router/route_names.dart';
 import '../../features/auth/presentation/viewmodels/session_view_model.dart';
+import '../../features/calls/domain/entities/call.dart';
 import '../../features/calls/presentation/viewmodels/active_call_controller.dart';
 import '../../features/chat/presentation/viewmodels/conversation_view_model.dart';
 import '../../features/chat/presentation/viewmodels/conversations_view_model.dart';
@@ -16,11 +17,14 @@ import '../../features/matches/presentation/viewmodels/matches_view_model.dart';
 import '../../features/subscriptions/presentation/viewmodels/subscription_view_model.dart';
 import '../di/core_providers.dart';
 import '../di/repository_providers.dart';
+import '../push/push_notifications.dart';
+import '../widgets/top_snack.dart';
 import 'chat_events.dart';
 import 'chat_socket.dart';
 
-/// Keeps the socket connected while the member is signed in, and shows a
-/// local notification when a message or match arrives outside the open chat.
+/// Keeps the socket connected while the member is signed in — including when
+/// the app is backgrounded — and shows local notifications for messages,
+/// matches, and incoming calls outside the open chat.
 class RealtimeBinder extends ConsumerStatefulWidget {
   const RealtimeBinder({super.key, required this.child});
 
@@ -36,12 +40,38 @@ class _RealtimeBinderState extends ConsumerState<RealtimeBinder>
   var _notificationsReady = false;
   var _messagesEnabled = true;
   var _matchesEnabled = true;
+  var _lifecycle = AppLifecycleState.resumed;
+
+  static const _messagesChannel = AndroidNotificationDetails(
+    'dating_cloud_messages',
+    'Messages',
+    channelDescription: 'New matches and messages',
+    importance: Importance.high,
+    priority: Priority.high,
+    category: AndroidNotificationCategory.message,
+  );
+
+  static const _callsChannel = AndroidNotificationDetails(
+    'dating_cloud_calls',
+    'Calls',
+    channelDescription: 'Incoming voice and video calls',
+    importance: Importance.max,
+    priority: Priority.max,
+    category: AndroidNotificationCategory.call,
+    fullScreenIntent: true,
+    playSound: true,
+    enableVibration: true,
+    visibility: NotificationVisibility.public,
+  );
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncSession());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncSession();
+      _consumePendingPush();
+    });
   }
 
   @override
@@ -51,15 +81,22 @@ class _RealtimeBinderState extends ConsumerState<RealtimeBinder>
     super.dispose();
   }
 
+  bool get _isForeground =>
+      _lifecycle == AppLifecycleState.resumed ||
+      _lifecycle == AppLifecycleState.inactive;
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lifecycle = state;
     final config = ref.read(appConfigProvider);
     if (config.usesMockFor(DataFeature.chat)) return;
-    final socket = ref.read(chatSocketProvider);
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
-      socket.disconnect();
-    } else if (state == AppLifecycleState.resumed) {
-      _syncSession();
+
+    // Keep Socket.IO connected in background so message/call events still
+    // arrive and can raise local notifications. Only reconnect/refresh on
+    // resume (OS may have suspended the connection).
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_syncSession());
+      _consumePendingPush();
     }
   }
 
@@ -84,10 +121,29 @@ class _RealtimeBinderState extends ConsumerState<RealtimeBinder>
     try {
       final platform = ref.read(platformRepositoryProvider);
       await platform.registerDevice();
+      // Re-register when FCM rotates the token (app can be killed between).
+      PushNotifications.onTokenRefresh = (_) {
+        unawaited(platform.registerDevice());
+      };
       final prefs = await platform.notificationPreferences();
       _messagesEnabled = prefs.messages;
       _matchesEnabled = prefs.newMatches;
     } catch (_) {}
+    _consumePendingPush();
+  }
+
+  void _consumePendingPush() {
+    final payload = PendingPushNavigation.payload;
+    if (payload == null || payload.isEmpty) return;
+    final session = ref.read(sessionViewModelProvider).value;
+    if (session == null) return;
+    PendingPushNavigation.payload = null;
+    _opened(
+      NotificationResponse(
+        notificationResponseType: NotificationResponseType.selectedNotification,
+        payload: payload,
+      ),
+    );
   }
 
   void _openCall(String callId) {
@@ -102,17 +158,38 @@ class _RealtimeBinderState extends ConsumerState<RealtimeBinder>
   Future<void> _prepareNotifications() async {
     if (_notificationsReady) return;
     try {
+      final android = _notifications
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      await android?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          'dating_cloud_messages',
+          'Messages',
+          description: 'New matches and messages',
+          importance: Importance.high,
+        ),
+      );
+      await android?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          'dating_cloud_calls',
+          'Calls',
+          description: 'Incoming voice and video calls',
+          importance: Importance.max,
+        ),
+      );
       await _notifications.initialize(
         settings: const InitializationSettings(
           android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+          iOS: DarwinInitializationSettings(
+            requestAlertPermission: true,
+            requestBadgePermission: true,
+            requestSoundPermission: true,
+          ),
         ),
         onDidReceiveNotificationResponse: _opened,
       );
-      await _notifications
-          .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin
-          >()
-          ?.requestNotificationsPermission();
+      await android?.requestNotificationsPermission();
       _notificationsReady = true;
     } catch (_) {}
   }
@@ -121,7 +198,12 @@ class _RealtimeBinderState extends ConsumerState<RealtimeBinder>
     final id = response.payload;
     if (id == null || id.isEmpty || !mounted) return;
     if (id.startsWith('call:')) {
-      _openCall(id.substring(5));
+      final callId = id.substring(5);
+      unawaited(
+        ref.read(activeCallProvider.notifier).restoreActive().then((_) {
+          _openCall(callId);
+        }),
+      );
       return;
     }
     ref.read(routerProvider).go(RoutePaths.conversation(id));
@@ -132,20 +214,21 @@ class _RealtimeBinderState extends ConsumerState<RealtimeBinder>
     required String title,
     required String body,
     String? payload,
+    bool isCall = false,
   }) async {
+    if (!_notificationsReady) await _prepareNotifications();
     if (!_notificationsReady) return;
     try {
       await _notifications.show(
         id: id,
         title: title,
         body: body,
-        notificationDetails: const NotificationDetails(
-          android: AndroidNotificationDetails(
-            'dating_cloud_messages',
-            'Messages',
-            channelDescription: 'New matches and messages',
-            importance: Importance.high,
-            priority: Priority.high,
+        notificationDetails: NotificationDetails(
+          android: isCall ? _callsChannel : _messagesChannel,
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
           ),
         ),
         payload: payload,
@@ -161,6 +244,9 @@ class _RealtimeBinderState extends ConsumerState<RealtimeBinder>
         ref.invalidate(matchesViewModelProvider);
         final open = ref.read(openConversationProvider);
         if (open != null) ref.invalidate(conversationViewModelProvider(open));
+        if (ref.read(appConfigProvider).featureFlags.calls) {
+          unawaited(ref.read(activeCallProvider.notifier).restoreActive());
+        }
       case SessionLost():
         ref.read(sessionViewModelProvider.notifier).signOut();
       case MessageArrived(:final message):
@@ -170,9 +256,9 @@ class _RealtimeBinderState extends ConsumerState<RealtimeBinder>
         if (message.senderId == me || open == message.conversationId) return;
         final preview = message.preview.trim();
         final body = preview.isEmpty ? 'You have a new message' : preview;
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text(body)));
+        if (_isForeground) {
+          showTopSnackBar(context, body);
+        }
         if (!_messagesEnabled) return;
         _notify(
           id: message.conversationId.hashCode & 0x7fffffff,
@@ -204,28 +290,61 @@ class _RealtimeBinderState extends ConsumerState<RealtimeBinder>
         ref.invalidate(subscriptionViewModelProvider);
       case CallIncoming(:final call):
         if (!ref.read(appConfigProvider).featureFlags.calls) return;
-        _openCall(call.id);
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(
-              content: Text(
-                'Incoming ${call.type.name} call',
-              ),
-            ),
-          );
+        final active = ref.read(activeCallProvider);
+        if (active.isActive && active.call?.id != call.id) {
+          if (_isForeground) {
+            showTopSnackBar(context, 'Another call is already active');
+          }
+          return;
+        }
+        // Works while minimized if the process + socket are still alive.
+        // When the app is force-killed, FCM is required (see PushNotifications).
         _notify(
           id: call.id.hashCode & 0x7fffffff,
-          title: 'Incoming call',
+          title:
+              'Incoming ${call.type == CallType.video ? 'video' : 'voice'} call',
           body: 'Tap to answer',
           payload: 'call:${call.id}',
+          isCall: true,
         );
+        if (_isForeground) {
+          _openCall(call.id);
+          showTopSnackBar(
+            context,
+            'Incoming ${call.type == CallType.video ? 'video' : 'voice'} call',
+          );
+        }
+      case CallMissed(:final call):
+        ref.invalidate(conversationsViewModelProvider);
+        if (!_isForeground) {
+          _notify(
+            id: call.id.hashCode & 0x7fffffff,
+            title:
+                'Missed ${call.type == CallType.video ? 'video' : 'voice'} call',
+            body: 'Tap to open chat',
+            payload: call.conversationId,
+          );
+        }
+      case CallRejected(:final call):
+      case CallCancelled(:final call):
+      case CallEnded(:final call):
+      case CallBusy(:final call):
+        ref.invalidate(conversationsViewModelProvider);
+        if (!_isForeground &&
+            (event is CallEnded || event is CallRejected)) {
+          final label = call.chatLabel(
+            myUserId: ref.read(sessionViewModelProvider).value?.userId ?? '',
+          );
+          if (label.isNotEmpty) {
+            _notify(
+              id: call.id.hashCode & 0x7fffffff,
+              title: label,
+              body: 'Tap to open chat',
+              payload: call.conversationId,
+            );
+          }
+        }
       case CallAccepted():
-      case CallRejected():
-      case CallCancelled():
-      case CallEnded():
-      case CallMissed():
-      case CallBusy():
       case MessagesRead():
       case TypingChanged():
       case PresenceChanged():

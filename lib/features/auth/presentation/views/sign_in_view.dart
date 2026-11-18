@@ -24,6 +24,10 @@ class _SignInViewState extends ConsumerState<SignInView> {
   late final MockAuthDefaults? _defaults = ref.read(mockAuthDefaultsProvider);
   late final _phone = TextEditingController(text: _defaults?.nationalNumber);
   late final _code = TextEditingController(text: _defaults?.otpCode);
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  final _displayName = TextEditingController();
+  var _registerMode = false;
   late String _dialCode =
       _defaults?.dialCode ?? PhoneNumberRules.dialCodes.first.code;
 
@@ -31,6 +35,9 @@ class _SignInViewState extends ConsumerState<SignInView> {
   void dispose() {
     _phone.dispose();
     _code.dispose();
+    _email.dispose();
+    _password.dispose();
+    _displayName.dispose();
     super.dispose();
   }
 
@@ -43,6 +50,7 @@ class _SignInViewState extends ConsumerState<SignInView> {
       color: theme.colorScheme.onSurfaceVariant,
     );
     final isOtp = state.step == SignInStep.otp;
+    final isEmail = state.step == SignInStep.email;
 
     return Scaffold(
       body: SafeArea(
@@ -59,11 +67,17 @@ class _SignInViewState extends ConsumerState<SignInView> {
               child: RoundIconButton(
                 key: const Key('signIn.back'),
                 icon: Icons.chevron_left_rounded,
-                tooltip: isOtp ? 'Use a different number' : 'Back',
+                tooltip: isOtp
+                    ? 'Use a different number'
+                    : isEmail
+                    ? 'Use phone'
+                    : 'Back',
                 onPressed: state.isSubmitting
                     ? null
                     : isOtp
                     ? viewModel.changePhoneNumber
+                    : isEmail
+                    ? viewModel.usePhone
                     : () => context.canPop()
                           ? context.pop()
                           : context.go(RoutePaths.welcome),
@@ -71,11 +85,55 @@ class _SignInViewState extends ConsumerState<SignInView> {
             ),
             const SizedBox(height: AppSpacing.lg - 4),
             Text(
-              isOtp ? 'Enter your code' : 'Can we get your number?',
+              isOtp
+                  ? 'Enter your code'
+                  : isEmail
+                  ? (_registerMode ? 'Create account' : 'Sign in with email')
+                  : 'Can we get your number?',
               style: theme.textTheme.headlineLarge,
             ),
             const SizedBox(height: AppSpacing.sm),
-            if (isOtp) ...[
+            if (isEmail) ...[
+              if (_registerMode) ...[
+                TextField(
+                  controller: _displayName,
+                  enabled: !state.isSubmitting,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(hintText: 'Display name'),
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
+              TextField(
+                controller: _email,
+                enabled: !state.isSubmitting,
+                keyboardType: TextInputType.emailAddress,
+                autofillHints: const [AutofillHints.email],
+                decoration: const InputDecoration(hintText: 'Email'),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              TextField(
+                controller: _password,
+                enabled: !state.isSubmitting,
+                obscureText: true,
+                autofillHints: const [AutofillHints.password],
+                decoration: InputDecoration(
+                  hintText: _registerMode
+                      ? 'Password (10+ characters)'
+                      : 'Password',
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              TextButton(
+                onPressed: state.isSubmitting
+                    ? null
+                    : () => setState(() => _registerMode = !_registerMode),
+                child: Text(
+                  _registerMode
+                      ? 'Already have an account? Sign in'
+                      : 'Need an account? Register',
+                ),
+              ),
+            ] else if (isOtp) ...[
               Text(
                 'We sent a 6-digit code to ${state.phoneNumber}.',
                 style: theme.textTheme.bodyLarge,
@@ -172,16 +230,51 @@ class _SignInViewState extends ConsumerState<SignInView> {
               key: const Key('signIn.submit'),
               onPressed: state.isSubmitting
                   ? null
-                  : () => isOtp
-                        ? viewModel.verifyOtp(_code.text.trim())
-                        : _sendCode(viewModel),
+                  : () {
+                      if (isOtp) {
+                        viewModel.verifyOtp(_code.text.trim());
+                      } else if (isEmail) {
+                        if (_registerMode) {
+                          viewModel.registerWithEmail(
+                            email: _email.text.trim(),
+                            password: _password.text,
+                            displayName: _displayName.text.trim(),
+                            dateOfBirth: DateTime.utc(2000, 1, 1),
+                          );
+                        } else {
+                          viewModel.loginWithEmail(
+                            email: _email.text.trim(),
+                            password: _password.text,
+                          );
+                        }
+                      } else {
+                        _sendCode(viewModel);
+                      }
+                    },
               child: state.isSubmitting
                   ? const SizedBox.square(
                       dimension: 22,
                       child: CircularProgressIndicator(strokeWidth: 2.5),
                     )
-                  : const Text('Next'),
+                  : Text(
+                      isEmail
+                          ? (_registerMode ? 'Register' : 'Sign in')
+                          : 'Next',
+                    ),
             ),
+            if (!isOtp && !isEmail) ...[
+              const SizedBox(height: AppSpacing.md),
+              TextButton(
+                onPressed: state.isSubmitting ? null : viewModel.useEmail,
+                child: const Text('Continue with email'),
+              ),
+              TextButton(
+                onPressed: state.isSubmitting
+                    ? null
+                    : () => viewModel.socialSignIn('google'),
+                child: const Text('Continue with Google'),
+              ),
+            ],
             if (_defaults != null) ...[
               const SizedBox(height: AppSpacing.lg),
               // DecoratedBox(

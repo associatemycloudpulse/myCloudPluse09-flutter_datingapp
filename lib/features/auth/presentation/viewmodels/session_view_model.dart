@@ -18,8 +18,11 @@ class SessionViewModel extends AsyncNotifier<AuthSession?> {
     state = AsyncData(session.copyWith(needsOnboarding: false));
   }
 
-  Future<void> signOut() async {
-    await ref.read(authRepositoryProvider).signOut();
+  Future<void> signOut({bool allDevices = false}) async {
+    try {
+      await ref.read(platformRepositoryProvider).unregisterDevice();
+    } catch (_) {}
+    await ref.read(authRepositoryProvider).signOut(allDevices: allDevices);
     state = const AsyncData(null);
   }
 }

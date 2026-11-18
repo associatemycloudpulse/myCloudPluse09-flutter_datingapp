@@ -171,9 +171,7 @@ class _EditInterestsSheetState extends ConsumerState<EditInterestsSheet> {
     }
     setState(() => _saving = true);
     try {
-      await ref.read(profileRepositoryProvider).updateMyProfile(
-        ProfileUpdate(interests: _labels.toList()),
-      );
+      await ref.read(profileRepositoryProvider).setInterests(_labels.toList());
       ref.invalidate(myProfileViewModelProvider);
       if (mounted) Navigator.pop(context);
     } catch (error) {
